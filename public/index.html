@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yellowgram messenger</title>
+    <link rel="icon" type="image/png" href="./rer.png">
+    <link rel="apple-touch-icon" href="/rer.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="/rer.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/rer.png">
+    <link rel="apple-touch-icon" sizes="167x167" href="/rer.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        :root { 
+            --bg-blue-light: #e3f2fd; --msg-sent-green: #dcf8c6; 
+            --msg-received-yellow: #fff9c4; --yellow-main: #ffd700; 
+            --white: #ffffff; --gray-light: #f5f5f5;
+            --online-color: #4caf50; --offline-color: #bbbbbb;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--bg-blue-light); height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        #main-app { width: 95%; max-width: 1200px; height: 92vh; background: var(--white); display: flex; box-shadow: 0 15px 50px rgba(0,0,0,0.15); border-radius: 20px; overflow: hidden; position: relative; }
+
+        /* --- تحديث الموبايل (تم الإصلاح لضمان عدم التداخل) --- */
+        @media (max-width: 768px) {
+            #main-app { width: 100% !important; height: 100vh !important; border-radius: 0 !important; }
+            #sidebar { 
+                position: absolute; inset: 0; width: 100% !important; 
+                z-index: 20; transition: transform 0.3s ease; background: white; 
+            }
+            #sidebar.mobile-hidden { transform: translateX(100%); visibility: hidden; }
+            #chat-area { 
+                position: absolute; inset: 0; width: 100% !important; 
+                z-index: 10; display: none; 
+            }
+            #chat-area.mobile-visible { display: flex !important; }
+            #back-to-list { display: block !important; }
+        }
+        
+           /* تنسيق صورة المرسل بجانب الرسالة */
+              .msg-wrapper { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 5px; }
+              .msg-wrapper.mine { flex-direction: row-reverse; } /* للرسائل الخاصة بي */
+
+              .sender-avatar { 
+                               width: 35px; height: 35px; border-radius: 50%; 
+                               object-fit: cover; border: 1px solid var(--yellow-main);
+                               cursor: pointer; flex-shrink: 0;
+                             }
+
+        /* Sidebar */
+        #sidebar { width: 350px; border-left: 1px solid #eee; display: flex; flex-direction: column; background: var(--white); }
+        .sidebar-header { padding: 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+        #full-list { flex: 1; overflow-y: auto; background: linear-gradient(to bottom, #bce4cb, #f5e9c4); }
+        .section-title { padding: 10px 20px; font-size: 12px; color: #888; background: #fafafa; }
+        .list-item { padding: 15px 20px; cursor: pointer; display: flex; align-items: center; gap: 15px; border-bottom: 1px solid #f9f9f9; transition: 0.2s; }
+        .list-item.active { background: #e3f2fd; border-right: 4px solid #2196f3; }
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; }
+        .online { background: var(--online-color); } .offline { background: var(--offline-color); }
+
+        /* Chat */
+        #chat-area { flex: 1; display: none; flex-direction: column; background: var(--bg-blue-light); }
+        #chat-header { padding: 15px 25px; background: var(--white); border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+        #messages { flex: 1; overflow-y: auto; padding: 25px; display: flex; flex-direction: column; gap: 12px; }
+        .msg { padding: 12px 18px; border-radius: 18px; max-width: 70%; font-size: 14.5px; position: relative; box-shadow: 0 2px 4px rgba(0,0,0,0.05); word-break: break-word; }
+        .msg img, .msg video { max-width: 100%; border-radius: 10px; margin-top: 5px; display: block; }
+        .mine { background: var(--msg-sent-green); align-self: flex-start; border-bottom-right-radius: 4px; color: #1b5e20; }
+        .others { background: var(--msg-received-yellow); align-self: flex-end; border-bottom-left-radius: 4px; color: #827717; }
+        
+        #back-to-list { display: none; background: none; border: none; font-size: 24px; cursor: pointer; color: #555; margin-left: 10px; }
+
+        /* Profile Modal */
+        #profile-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 2000; }
+        .profile-card { background: white; padding: 30px; border-radius: 20px; width: 350px; text-align: center; position: relative; }
+        .profile-card img { width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 3px solid var(--yellow-main); cursor: pointer; }
+
+        /* Auth & Inputs */
+        .btn-group-create { background: #54d32d; color: white; border: none; padding: 8px 15px; border-radius: 8px; cursor: pointer; }
+        footer { padding: 20px; background: var(--white); border-top: 1px solid #eee; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        #msg-input { flex: 1; border: 1px solid #eee; background: #f8f9fa; padding: 12px 20px; border-radius: 30px; outline: none; }
+        .send-btn, .attach-btn { width: 50px; height: 50px; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        #file-preview-container { width: 100%; display: none; align-items: center; gap: 10px; padding: 10px; background: #f9f9f9; border-radius: 8px; }
+        #auth-screen { position: absolute; inset: 0; background: white; z-index: 3000; display: flex; align-items: center; justify-content: center; }
+        .auth-card { width: 350px; text-align: center; padding: 40px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); border-radius: 20px; }
+        .auth-card input { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+
+<div id="main-app">
+    <div id="auth-screen" style="background-color: #f3eda0;">
+        <div class="auth-card" style="background-color: #f8f8f0;">
+            <h1 style="color: #ffd700;">Yellowgram</h1>
+            <input id="u-name" placeholder="اسم المستخدم">
+            <input id="e-mail" placeholder="البريد الإلكتروني (اختياري)">
+            <input id="p-word" type="password" placeholder="كلمة المرور">
+            <button class="btn-group-create" style="width:100%; padding:12px;" onclick="authenticate(false)">دخول</button>
+            <span style="cursor:pointer; font-size:12px; color:#888; display:block; margin-top:10px;" onclick="authenticate(true)">إنشاء حساب جديد</span>
+        </div>
+    </div>
+
+    <div id="profile-modal">
+        <div class="profile-card">
+            <span style="position:absolute; top:10px; right:15px; cursor:pointer;" onclick="document.getElementById('profile-modal').style.display='none'">×</span>
+            <img id="p-avatar-display" onclick="changeAvatar()" title="تغيير الصورة">
+            <h2 id="p-username-display"></h2>
+            <p id="p-email-display" style="color:#888; font-size:12px;"></p>
+            <div id="my-profile-edit" style="display:none;">
+                <textarea id="p-bio-input" style="width:100%; margin-top:10px; padding:10px; border-radius:8px;"></textarea>
+                <button class="btn-group-create" style="width:100%; margin-top:10px;" onclick="saveProfile()">حفظ</button>
+            </div>
+            <p id="p-bio-display" style="margin-top:15px; font-style:italic;"></p>
+        </div>
+    </div>
+
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <button class="btn-group-create" onclick="createNewGroup()">➕ مجموعة</button>
+            <button class="btn-group-create" style="background:#2196f3" onclick="viewProfile(currentUser, true)">ملفي</button>
+            <button style="background:#f44336; border:none; color:white; padding:5px 10px; border-radius:5px; cursor:pointer;" onclick="userLogout()">خروج</button>
+        </div>
+        <div id="full-list">
+            <div class="section-title">المستخدمين</div>
+           <div class="sidebar-header" style="background:#f0f2f5;">
+              <input type="text" id="friend-request-name" placeholder="ادخل اسم المستخدم..." style="flex:1; padding:5px; border-radius:5px; border:1px solid #ddd;">
+              <button onclick="sendFriendRequest()" class="btn-group-create" style="margin-right:5px;">طلب إضافة</button>
+           </div>
+            <div id="friends-list-container">
+             </div>
+            <div class="section-title">المجموعات</div>
+            <div id="groups-container"></div>
+        </div>
+    </div>
+
+    <div id="chat-area">
+        <header id="chat-header">
+            <div style="display: flex; align-items: center;">
+                <button id="back-to-list" onclick="showSidebar()" style="width: auto; height: 30px; color: aqua;">🔙</button>
+                <span id="active-chat-name">اختر دردشة</span>
+            </div>
+            <div id="admin-tools" style="display:none; gap:5px;">
+                <button onclick="addGroupMember()" style="background:#2196f3; color:white; border:none; padding:5px; border-radius:5px;">إضافة</button>
+                <button onclick="removeGroupMember()" style="background:#f44336; color:white; border:none; padding:5px; border-radius:5px;">حذف</button>
+            </div>
+        </header>
+        <div id="messages"></div>
+        <footer>
+            <div id="file-preview-container">
+                <span id="file-name"></span>
+                <button onclick="clearFileSelection()" style="background:red; color:white; border:none; border-radius:50%; width:20px; cursor:pointer;">X</button>
+            </div>
+            <input type="file" id="file-input" style="display:none;" accept="image/*,video/*">
+            <button class="attach-btn" style="background:#9ccc65; color:white;" onclick="document.getElementById('file-input').click()">📎</button>
+            <input id="msg-input" placeholder="اكتب رسالة..." onkeypress="if(event.key==='Enter') sendMessage()">
+            <button class="send-btn" style="background:var(--yellow-main)" onclick="sendMessage()">➤</button>
+        </footer>
+    </div>
+</div>
+
+<script>
+    const socket = io();
+    let currentUser = "", currentChatTarget = "", isGroupMode = false, selectedFile = null;
+
+    // الحفاظ على نظام التوثيق الخاص بك
+    window.onload = () => {
+        const u = localStorage.getItem('yg_user'), p = localStorage.getItem('yg_pass');
+        if (u && p) socket.emit('authenticate', { username: u, password: p, isRegistering: false });
+    };
+
+    function authenticate(isReg) {
+        const u = document.getElementById('u-name').value, p = document.getElementById('p-word').value, e = document.getElementById('e-mail').value;
+        if (!u || !p) return alert("املاً البيانات");
+        localStorage.setItem('yg_user', u); localStorage.setItem('yg_pass', p);
+        socket.emit('authenticate', { username: u, password: p, email: e, isRegistering: isReg });
+    }
+
+    function userLogout() { localStorage.clear(); location.reload(); }
+
+    socket.on('auth_success', u => { currentUser = u; document.getElementById('auth-screen').style.display = 'none'; });
+    socket.on('auth_error', e => { alert(e); userLogout(); });
+
+    // الملف الشخصي
+   function viewProfile(target, isMine) {
+    // نطلب من السيرفر بيانات المستخدم (target) سواء كان أنا أو غيري
+    socket.emit('get_profile', target); 
+    
+    socket.once('profile_data', data => {
+        document.getElementById('profile-modal').style.display = 'flex';
+        document.getElementById('p-avatar-display').src = data.avatar || "/uploads/default-avatar.png";
+        document.getElementById('p-username-display').innerText = data.username;
+        document.getElementById('p-email-display').innerText = data.email || "مخفي";
+        
+        const editZone = document.getElementById('my-profile-edit');
+        const dispZone = document.getElementById('p-bio-display');
+        
+        if (isMine) {
+            editZone.style.display = 'block'; 
+            dispZone.style.display = 'none';
+            document.getElementById('p-bio-input').value = data.bio;
+        } else {
+            editZone.style.display = 'none'; 
+            dispZone.style.display = 'block';
+            dispZone.innerText = data.bio || "لا يوجد وصف حالياً";
+        }
+    });
+}
+
+    async function changeAvatar() {
+        const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*';
+        input.onchange = async () => {
+            const formData = new FormData(); formData.append('file', input.files[0]);
+            const res = await fetch('/upload-avatar', { method: 'POST', body: formData }).then(r => r.json());
+            if (res.success) {
+                document.getElementById('p-avatar-display').src = res.avatarPath;
+                socket.emit('update_profile', { avatar: res.avatarPath });
+            }
+        };
+        input.click();
+    }
+
+    function saveProfile() {
+        socket.emit('update_profile', { bio: document.getElementById('p-bio-input').value });
+        document.getElementById('profile-modal').style.display = 'none';
+    }
+
+    function filterUsers() {
+    let term = document.getElementById('search-input').value.toLowerCase();
+    let items = document.querySelectorAll('.list-item');
+    items.forEach(item => {
+        let name = item.querySelector('.item-name').innerText.toLowerCase();
+        item.style.display = name.includes(term) ? 'flex' : 'none';
+    });
+}
+
+    // --- تم إصلاح الدالة لتعمل على الموبايل والكمبيوتر دون تعارض ---
+    function selectChat(t, g, admin) {
+        currentChatTarget = t; 
+        isGroupMode = g;
+        document.getElementById('active-chat-name').innerText = t;
+        document.getElementById('messages').innerHTML = "";
+        document.getElementById('admin-tools').style.display = (g && admin === currentUser) ? 'flex' : 'none';
+        
+        if (window.innerWidth <= 768) {
+            document.getElementById('chat-area').classList.add('mobile-visible');
+            document.getElementById('sidebar').classList.add('mobile-hidden');
+        } else {
+            document.getElementById('chat-area').style.display = 'flex';
+        }
+        socket.emit('get_history', { other: t, isGroup: g });
+    }
+
+    function showSidebar() {
+        document.getElementById('sidebar').classList.remove('mobile-hidden');
+        document.getElementById('chat-area').classList.remove('mobile-visible');
+    }
+
+    // الدردشة
+    // ملاحظة مهمة: قمت بتغيير المعرف من 'users-container' إلى 'friends-list-container' ليتطابق مع الـ HTML الخاص بك ولا يتوقف الكود
+    socket.on('update_user_list', users => {
+        const container = document.getElementById('friends-list-container');
+        if(container) {
+            container.innerHTML = users.filter(u => u.username !== currentUser).map(u => `
+                <div class="list-item" onclick="selectChat('${u.username}', false)">
+                    <div class="status-dot ${u.isOnline ? 'online' : 'offline'}"></div>
+                    <div class="item-info"><span class="item-name">${u.username}</span></div>
+                </div>`).join('');
+        }
+    });
+
+    // إضافة وظيفة طلب الإضافة الجديدة (إضافة دون حذف)
+    function sendFriendRequest() {
+        const name = document.getElementById('friend-request-name').value.trim();
+        if(name) {
+            socket.emit('send_request', { targetName: name });
+            document.getElementById('friend-request-name').value = "";
+        }
+    }
+    socket.on('receive_request', data => {
+        if(confirm("طلب إضافة من " + data.from + ". هل تقبل؟")) {
+            socket.emit('accept_request', { from: data.from });
+        }
+    });
+
+    socket.on('update_group_list', gs => {
+        document.getElementById('groups-container').innerHTML = gs.map(g => `
+            <div class="list-item" onclick="selectChat('${g.name}', true, '${g.admin}')">
+                <span class="item-name">${g.name}</span><span class="group-badge">جروب</span>
+            </div>`).join('');
+    });
+
+    document.getElementById('file-input').onchange = (e) => {
+        selectedFile = e.target.files[0];
+        if (selectedFile && selectedFile.size < 250 * 1024 * 1024) {
+            document.getElementById('file-preview-container').style.display = 'flex';
+            document.getElementById('file-name').innerText = selectedFile.name;
+        } else if (selectedFile) { alert("الملف كبير جداً (250MB)"); clearFileSelection(); }
+    };
+
+    function clearFileSelection() { selectedFile = null; document.getElementById('file-preview-container').style.display = 'none'; }
+
+    async function sendMessage() {
+        const text = document.getElementById('msg-input').value.trim();
+        if (!text && !selectedFile) return;
+        let fileInfo = {};
+        if (selectedFile) {
+            const fd = new FormData(); fd.append('file', selectedFile);
+            const res = await fetch('/upload', { method: 'POST', body: fd }).then(r => r.json());
+            if (res.success) fileInfo = { filePath: res.filePath, fileType: res.fileType };
+        }
+        socket.emit('chat_message', { to: currentChatTarget, isGroup: isGroupMode, text, ...fileInfo });
+        document.getElementById('msg-input').value = ""; clearFileSelection();
+    }
+
+    socket.on('chat_history', h => h.forEach(renderMessage));
+    socket.on('new_msg', m => { if (m.toGroup === currentChatTarget || m.from === currentChatTarget || m.to === currentChatTarget) renderMessage(m); });
+
+    function renderMessage(m) {
+    const container = document.getElementById('messages');
+    const mine = m.from === currentUser;
+    
+    // إنشاء حاوية للرسالة والصورة معاً
+    const wrapper = document.createElement('div');
+    wrapper.className = `msg-wrapper ${mine ? 'mine' : 'others'}`;
+    
+    // إنشاء عنصر الصورة
+    const avatarImg = document.createElement('img');
+    avatarImg.className = 'sender-avatar';
+    avatarImg.onclick = () => viewProfile(m.from, mine);
+    
+    // افتراضياً نضع صورة مؤقتة، ثم نحدثها برابط الصورة الحقيقي
+    avatarImg.src = "/uploads/default-avatar.png"; 
+
+    // جلب رابط الصورة الحقيقي للمرسل (سواء كان أنا أو الطرف الآخر)
+    socket.emit('get_profile', m.from);
+    socket.once('profile_data', (data) => {
+        if (data.username === m.from) avatarImg.src = data.avatar;
+    });
+
+    // بناء فقاعة الرسالة
+    const div = document.createElement('div');
+    div.className = `msg ${mine ? 'mine' : 'others'}`;
+    
+    let content = `<small style="color:#2196f3; font-weight:bold;">${m.from}</small><br>`;
+    if (m.text) content += `<span>${m.text}</span>`;
+    if (m.filePath) {
+        if (m.fileType.startsWith('image/')) content += `<img src="${m.filePath}">`;
+        else if (m.fileType.startsWith('video/')) content += `<video src="${m.filePath}" controls></video>`;
+    }
+    
+    div.innerHTML = content;
+
+    // تجميع العناصر: الصورة + الفقاعة داخل الـ Wrapper
+    wrapper.appendChild(avatarImg);
+    wrapper.appendChild(div);
+    
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+}
+
+    function createNewGroup() { const n = prompt("اسم الجروب:"); if(n) socket.emit('create_group', n); }
+</script>
+</body>
+</html>
