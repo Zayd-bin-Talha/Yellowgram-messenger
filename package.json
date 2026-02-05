@@ -1,0 +1,13 @@
+{
+  "name": "yellowgram-messenger",
+  "version": "1.0.0",
+  "description": "Yellowgram Messenger Project",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  }
+}
